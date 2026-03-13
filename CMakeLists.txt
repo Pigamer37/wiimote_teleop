@@ -14,10 +14,14 @@ find_package(rclcpp_lifecycle REQUIRED)
 find_package(joy REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(wiimote_msgs REQUIRED)
 find_package(kdl_parser REQUIRED)
+find_package( OpenCV REQUIRED )
 # uncomment the following section in order to fill in
 # further dependencies manually.
 # find_package(<dependency> REQUIRED)
+
+include_directories( ${OpenCV_INCLUDE_DIRS} )
 
 add_executable(wiimote_handler src/wiimote_handler.cpp)
 target_include_directories(wiimote_handler PUBLIC
@@ -25,10 +29,7 @@ target_include_directories(wiimote_handler PUBLIC
   $<INSTALL_INTERFACE:include>)
 target_compile_features(wiimote_handler PUBLIC c_std_99 cxx_std_17)  # Require C99 and C++17
 
-# target_link_libraries(wiimote_handler PUBLIC
-#   kdl_parser::kdl_parser
-#   rclcpp::rclcpp
-# )
+target_link_libraries(wiimote_handler ${OpenCV_LIBS})
 
 ament_target_dependencies(wiimote_handler
   hardware_interface
@@ -36,6 +37,7 @@ ament_target_dependencies(wiimote_handler
   rclcpp
   rclcpp_lifecycle
   joy
+  wiimote_msgs
   sensor_msgs
   std_msgs
   kdl_parser
