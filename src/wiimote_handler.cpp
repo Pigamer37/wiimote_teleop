@@ -143,7 +143,7 @@ class WiimoteHandler : public rclcpp::Node {
     KDL::Frame desired_pose;
     auto desired_joint_positions = KDL::JntArray(chain_.getNrOfJoints());
     if (imagePoints.size() != 4) {
-      RCLCPP_WARN(this->get_logger(), "Lesser than 4 IR points: %d",
+      RCLCPP_WARN(this->get_logger(), "Lesser than 4 IR points: %zu",
                   imagePoints.size());
       // TODO: Calculate the new pose based on previous and accelerometer data
       // instead of just using the previous pose

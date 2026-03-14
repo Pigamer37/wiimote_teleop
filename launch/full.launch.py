@@ -12,9 +12,11 @@ from launch.substitutions import (
     LaunchConfiguration,
     PathJoinSubstitution,
 )
+from launch.conditions import IfCondition
+from launch.event_handlers import OnProcessExit, OnProcessStart
 from launch_ros.actions import Node, LifecycleNode
 from launch_ros.substitutions import FindPackageShare
-from launch_ros.events import lifecycle
+from launch_ros.events import lifecycle, matches_node_name
 from launch_ros.event_handlers import OnStateTransition
 import lifecycle_msgs
 
@@ -25,7 +27,12 @@ def generate_launch_description():
             FindExecutable(name="xacro"),
             " ",
             PathJoinSubstitution(
-                [FindPackageShare("wiimote_teleop"), "urdf", "test_robot.urdf.xacro"]
+                [
+                    FindPackageShare("wiimote_teleop"),
+                    "description",
+                    "urdf",
+                    "6dofexample.urdf.xacro",
+                ]
             ),
         ]
     )
@@ -43,11 +50,9 @@ def generate_launch_description():
     controller_manager = Node(
         package="controller_manager",
         executable="ros2_control_node",
-        parameters=[
-            {"robot_description": robot_description_content},
-            controller_config,
-        ],
+        parameters=[controller_config],
         output="both",
+        remappings=[("~/robot_description", "/robot_description")],
     )
 
     joint_state_broadcaster_spawner = Node(
@@ -62,13 +67,46 @@ def generate_launch_description():
         arguments=["position_controller"],
     )
 
+    delayed_spawners = TimerAction(
+        period=3.0,
+        actions=[
+            joint_state_broadcaster_spawner,
+            position_controller_spawner,
+        ],
+    )
+
+    rviz_node = Node(
+        package="rviz2",
+        executable="rviz2",
+        name="rviz2",
+        output="log",
+        arguments=[
+            "-d",
+            PathJoinSubstitution(
+                [
+                    FindPackageShare("wiimote_teleop"),
+                    "description",
+                    "6dof.rviz",
+                ]
+            ),
+        ],
+        condition=IfCondition(LaunchConfiguration("rviz")),
+    )
+
+    delay_rviz_after_joint_state_broadcaster_spawner = RegisterEventHandler(
+        event_handler=OnProcessExit(
+            target_action=joint_state_broadcaster_spawner,
+            on_exit=[rviz_node],
+        )
+    )
+
     wiimote_handler = Node(
         package="wiimote_teleop",
         executable="wiimote_handler",
         parameters=[
             {
                 "robot_description": robot_description_content,
-                "end_link": LaunchConfiguration("end_link"),
+                "end_link_name": LaunchConfiguration("end_link"),
             }
         ],
         output="both",
@@ -85,26 +123,14 @@ def generate_launch_description():
                 [FindPackageShare("wiimote_teleop"), "config", "wiimote.yaml"]
             )
         ],
+        condition=IfCondition(LaunchConfiguration("wiimote")),
     )
-
     configure_wiimote = EmitEvent(
         event=lifecycle.ChangeState(
-            lifecycle_node_matcher=lifecycle.matches_node_name("/wiimote"),
+            lifecycle_node_matcher=matches_node_name("/wiimote"),
             transition_id=lifecycle_msgs.msg.Transition.TRANSITION_CONFIGURE,
         )
     )
-
-    delayed_spawners = TimerAction(
-        period=3.0,
-        actions=[
-            joint_state_broadcaster_spawner,
-            position_controller_spawner,
-            wiimote_handler,
-            wiimote_node,
-            configure_wiimote,
-        ],
-    )
-
     activate_wiimote = EmitEvent(
         event=lifecycle.ChangeState(
             lifecycle_node_matcher=lifecycle.matches_node_name("/wiimote"),
@@ -141,10 +167,27 @@ def generate_launch_description():
     return LaunchDescription(
         [
             DeclareLaunchArgument("end_link", default_value="tool0"),
+            DeclareLaunchArgument(
+                "rviz", default_value="true", choices=["true", "false"]
+            ),
+            DeclareLaunchArgument(
+                "wiimote", default_value="true", choices=["true", "false"]
+            ),
             robot_state_publisher,
             controller_manager,
             delayed_spawners,
-            on_configure_wiimote,
-            on_activate_wiimote,
+            delay_rviz_after_joint_state_broadcaster_spawner,
+            wiimote_node,  # launch wiimote_node based on the launch argument
+            RegisterEventHandler(  # configure wiimote when launched
+                OnProcessStart(
+                    target_action=wiimote_node,
+                    on_start=[
+                        LogInfo(msg="Wiimote started, configuring..."),
+                        configure_wiimote,
+                    ],
+                )
+            ),
+            on_configure_wiimote,  # when configured, activate it
+            on_activate_wiimote,  # when activated, start the handler
         ]
     )
