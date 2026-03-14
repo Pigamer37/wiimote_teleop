@@ -73,18 +73,22 @@ KDL::Frame calc_desired_pose(std::vector<cv::Point2f> imagePoints) {
 class WiimoteHandler : public rclcpp::Node {
  public:
   WiimoteHandler() : Node("wiimote_handler") {
-    subscription_ = this->create_subscription<wiimote_msgs::msg::State>(
-        "/wiimote/state", 10,
-        std::bind(&WiimoteHandler::topic_callback, this,
-                  std::placeholders::_1));
-    joint_sub_ = this->create_subscription<sensor_msgs::msg::JointState>(
-        "/joint_states", 10,
-        std::bind(&WiimoteHandler::update_joint_state, this,
-                  std::placeholders::_1));
     publisher_ = this->create_publisher<std_msgs::msg::Float64MultiArray>(
         "/position_commands", 10);
     op_feedback_pub_ = this->create_publisher<sensor_msgs::msg::JoyFeedbackArray>(
         "/joy/set_feedback", 10);
+    // set LED 4 to on as feedback that the node is running
+    sensor_msgs::msg::JoyFeedbackArray feedback_msg;
+    feedback_msg.array.resize(4);
+    for (size_t i = 0; i < feedback_msg.array.size()-1; i++) {
+      feedback_msg.array[i].type = feedback_msg.array[i].TYPE_LED;
+      feedback_msg.array[i].id = i;  // LED 1-3
+      feedback_msg.array[i].intensity = 0;  // off
+    }
+    feedback_msg.array[3].type = feedback_msg.array[3].TYPE_LED;
+    feedback_msg.array[3].id = 0;  // LED 1
+    feedback_msg.array[3].intensity = 1.0;  // on
+    op_feedback_pub_->publish(feedback_msg);
     // get robot description
     auto robot_param = rclcpp::Parameter();
     this->declare_parameter("robot_description",
@@ -105,6 +109,27 @@ class WiimoteHandler : public rclcpp::Node {
     // create KDL solvers
     ik_solver_ = std::make_shared<KDL::ChainIkSolverPos_LMA>(chain_);
     current_joint_positions_ = KDL::JntArray(chain_.getNrOfJoints());
+
+    joint_sub_ = this->create_subscription<sensor_msgs::msg::JointState>(
+        "/joint_states", 10,
+        std::bind(&WiimoteHandler::update_joint_state, this,
+                  std::placeholders::_1));
+
+    // subscribe to wiimote state topic after all the setup is done to avoid processing messages before we're ready
+    subscription_ = this->create_subscription<wiimote_msgs::msg::State>(
+        "/wiimote/state", 10,
+        std::bind(&WiimoteHandler::topic_callback, this,
+                  std::placeholders::_1));
+    // set LED 1 to on as feedback that the node is configured and ready to receive messages
+    for (size_t i = 0; i < feedback_msg.array.size(); i++) {
+      feedback_msg.array[i].type = feedback_msg.array[i].TYPE_LED;
+      feedback_msg.array[i].id = i;  // LED 1-4
+      feedback_msg.array[i].intensity = 0;  // off
+    }
+    feedback_msg.array[3].type = feedback_msg.array[3].TYPE_LED;
+    feedback_msg.array[3].id = 0;  // LED 1
+    feedback_msg.array[3].intensity = 1.0;  // on
+    op_feedback_pub_->publish(feedback_msg);
   }
 
  private:

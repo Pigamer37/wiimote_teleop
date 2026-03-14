@@ -2,3 +2,8 @@
 	path = UR
 	url = https://github.com/UniversalRobots/Universal_Robots_ROS2_Driver/
 	branch = humble
+
+[submodule "Universal_Robots_ROS2_Driver"]
+	path = UR_Descriptions
+	url = https://github.com/UniversalRobots/Universal_Robots_ROS2_Description
+	branch = humble
