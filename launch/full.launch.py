@@ -60,6 +60,7 @@ def generate_launch_description():
         parameters=[controller_config],
         output="both",
         remappings=[("~/robot_description", "/robot_description")],
+        condition=UnlessCondition(sim),
     )
 
     joint_state_broadcaster_spawner = Node(
@@ -74,11 +75,23 @@ def generate_launch_description():
         arguments=["position_controller"],
     )
 
+    gripper_controller_spawner = Node(
+        package="controller_manager",
+        executable="spawner",
+        namespace="gripper",
+        arguments=[
+            "gripper_controller",
+            "-c",
+            "/controller_manager",
+        ],
+    )
+
     delayed_spawners = TimerAction(
         period=3.0,
         actions=[
             joint_state_broadcaster_spawner,
             position_controller_spawner,
+            gripper_controller_spawner,
         ],
     )
 
@@ -118,6 +131,21 @@ def generate_launch_description():
             "on_exit_shutdown": "true",
         }.items(),
         condition=IfCondition(sim),
+    )
+
+    gripper = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            [
+                PathJoinSubstitution(
+                    [
+                        wiimote_teleop_pck,
+                        "launch",
+                        "gripper.launch.py",
+                    ]
+                )
+            ]
+        ),
+        launch_arguments={"sim": sim}.items(),
     )
 
     # Run the spawner node from the ros_gz_sim package. The entity name doesn't really matter if you only have a single robot.
@@ -240,6 +268,7 @@ def generate_launch_description():
             delay_rviz_after_joint_state_broadcaster_spawner,
             gazebo,
             spawn_entity,
+            # gripper,
             gz_bridge,
             joy_node,  # lauch joy_node based on the launch argument
             RegisterEventHandler(  # handle controller when launched

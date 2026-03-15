@@ -7,3 +7,7 @@
 	path = UR_Descriptions
 	url = https://github.com/UniversalRobots/Universal_Robots_ROS2_Description.git
 	branch = humble
+[submodule "delto_m_ros2"]
+	path = Delto_Grippers
+	url = https://github.com/tesollodelto/delto_m_ros2.git
+	branch = humble

@@ -13,6 +13,9 @@
 
   <!-- Import r6bot ros2_control description -->
   <xacro:include filename="$(find wiimote_teleop)/description/urdf/ros2_control.xacro" />
-  <xacro:r6bot_ros2_control name="r6bot" sim="true"/>
+  <xacro:r6bot_ros2_control name="r6bot" sim="true" gripper="true"/>
+
+  <xacro:include filename="$(find wiimote_teleop)/description/urdf/gripper.attach.urdf.xacro"/>
+  <xacro:gripper_attach base="tool0"/>
 
 </robot>

@@ -8,6 +8,9 @@ controller_manager:
     position_controller:
       type: position_controllers/JointGroupPositionController
 
+    gripper_controller:
+      type: position_controllers/JointGroupPositionController
+
 position_controller:
   ros__parameters:
     joints:
@@ -17,3 +20,19 @@ position_controller:
       - joint_4
       - joint_5
       - joint_6
+
+gripper_controller:
+  ros__parameters:
+    joints:
+    - j_dg_1_1
+    - j_dg_1_2
+    - j_dg_1_3
+    - j_dg_1_4
+    - j_dg_2_1
+    - j_dg_2_2
+    - j_dg_2_3
+    - j_dg_2_4
+    - j_dg_3_1
+    - j_dg_3_2
+    - j_dg_3_3
+    - j_dg_3_4

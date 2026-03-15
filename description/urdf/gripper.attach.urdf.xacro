@@ -1,0 +1,48 @@
+<?xml version="1.0"?>
+
+<robot name="delto_3f" xmlns:xacro="http://www.ros.org/wiki/xacro">
+<xacro:macro name="gripper_attach" params="base:=tool0">
+    <xacro:include filename="$(find wiimote_teleop)/description/urdf/gripper.links.urdf.xacro" />
+
+    <joint name="tool0_to_base_fixed" type="fixed">
+        <parent link="${base}" />
+        <child link="base_link_grip" />
+        <origin xyz="0 0 0" rpy="0 0 0" />
+    </joint>
+
+    <gazebo>
+
+        <gravity>false</gravity>
+        <physics type="dart">  <!-- dart 엔진이 일반적으로 더 빠름 -->
+            <max_step_size>0.0</max_step_size>  <!-- 스텝 사이즈 증가 -->
+            <real_time_factor>1.0</real_time_factor>
+            <real_time_update_rate>250</real_time_update_rate>  <!-- 업데이트 레이트 감소 -->
+            <max_contacts>5</max_contacts>  <!-- 접촉점 수 감소 -->
+
+            <!-- 추가 최적화 설정 -->
+            <solver>
+                <type>quick</type>
+                <iters>10</iters>  <!-- 반복 횟수 감소 -->
+                <precon_iters>0</precon_iters>
+                <sor>1.0</sor>
+            </solver>
+        </physics>
+
+        <self_collide>0</self_collide>
+
+        <!-- 렌더링 최적화 -->
+        <visual>
+            <shadows>false</shadows>
+            <grid>false</grid>
+        </visual>
+
+        <collision_detector>ode</collision_detector>
+        <constraints>
+            <contact_max_correcting_vel>0.0</contact_max_correcting_vel>
+            <cfm>0.0</cfm>
+            <erp>0.0</erp>
+        </constraints>
+
+    </gazebo>
+</xacro:macro>
+</robot>
