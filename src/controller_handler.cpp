@@ -123,12 +123,13 @@ class ControllerHandler : public rclcpp::Node {
                     sizeof(double));  // flat64 is equivalent to double
 
     publisher_->publish(articular_pose_msg);
+    // TODO: handle tool (button 7 is right trigger)
   }
   KDL::Frame get_desired_pose(const sensor_msgs::msg::Joy& msg) const{
     KDL::Frame curr_cartesian_pose;
     fk_solver_->JntToCart(current_joint_positions_, curr_cartesian_pose);
     // deal with origin
-    float axis_multiplier = 0.01;
+    float axis_multiplier = 0.2, rot_multiplier = 0.5;
     float x_inc = msg.axes[0] * axis_multiplier;
     float y_inc = msg.axes[1] * axis_multiplier;
     float z_inc = 0;
@@ -142,11 +143,18 @@ class ControllerHandler : public rclcpp::Node {
     origin.y(origin.y() + y_inc);
     origin.z(origin.z() + z_inc);
     // deal with orientation
-    float y_rot = msg.axes[3];
-    float x_rot = msg.axes[2];
+    float y_rot = msg.axes[3] * rot_multiplier;
+    float x_rot = msg.axes[2] * rot_multiplier;
+    float z_rot = 0;
+    if (msg.buttons[1]==1 && msg.buttons[2]==0) { // Left shoulder button
+      z_rot = 0.75 * rot_multiplier; // roll counter-clockwise (from robot)
+    } else if (msg.buttons[1]==0 && msg.buttons[2]==1) { // Right shoulder
+      z_rot = -0.75 * rot_multiplier; // roll clockwise (from robot)
+    }
     KDL::Rotation rotation = curr_cartesian_pose.M;
-    rotation.DoRotY(0.05*y_rot);
-    rotation.DoRotX(0.05*x_rot);
+    rotation.DoRotY(y_rot);
+    rotation.DoRotX(x_rot);
+    rotation.DoRotZ(z_rot);
 
     return KDL::Frame(rotation, origin);
   }

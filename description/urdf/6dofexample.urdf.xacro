@@ -8,9 +8,11 @@
   <link name="world"/>
 
   <xacro:r6bot_description/>
+  <xacro:include filename="gazebo.urdf.xacro"/>
+  <xacro:gazebo controllers="$(find wiimote_teleop)/config/controllers.yaml"/>
 
   <!-- Import r6bot ros2_control description -->
   <xacro:include filename="$(find wiimote_teleop)/description/urdf/ros2_control.xacro" />
-  <xacro:r6bot_ros2_control name="r6bot"/>
+  <xacro:r6bot_ros2_control name="r6bot" sim="true"/>
 
 </robot>

@@ -1,16 +1,24 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro">
 
-  <xacro:macro name="r6bot_ros2_control" params="name">
+  <xacro:macro name="r6bot_ros2_control" params="name sim">
 
     <ros2_control name="${name}" type="system">
 
       <!-- <hardware>
         <plugin>ros2_control_demo_example_7/RobotSystem</plugin>
       </hardware> -->
-      <hardware>
-          <plugin>mock_components/GenericSystem</plugin>
-      </hardware>
+      <xacro:if value="${sim}">
+        <hardware>
+            <plugin>gz_ros2_control/GazeboSimSystem</plugin>
+        </hardware>
+      </xacro:if>
+
+      <xacro:unless value="${sim}">
+        <hardware>
+            <plugin>mock_components/GenericSystem</plugin>
+        </hardware>
+      </xacro:unless>
 
       <joint name="joint_1">
         <command_interface name="position">

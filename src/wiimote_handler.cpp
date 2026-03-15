@@ -32,6 +32,10 @@ cv::Mat Rot90X = (cv::Mat_<double>(3, 3) <<
 1, 0, 0,
 0, 0,-1,   // 0, cos(M_PI / 2), -sin(M_PI / 2),
 0, 1, 0);  // 0, sin(M_PI / 2), cos(M_PI / 2));
+cv::Mat Rot90Z = (cv::Mat_<double>(3, 3) <<  // Rotate -90º around Z
+0, 1, 0,   // cos(), -sin(), 0,
+-1,0, 0,   // sin(), cos(), 0,
+0, 0, 1);  // 0, 0, 1;
 cv::Mat intrinsicCoeffs = (cv::Mat_<double>(3, 3) << 
 1700, 0,    IMG_WIDTH / 2.0,
 0,    1700, IMG_HEIGHT / 2.0,
@@ -42,8 +46,7 @@ std::vector<cv::Point3f> objectPoints = {
 KDL::Frame calc_desired_pose(std::vector<cv::Point2f> imagePoints) {
   cv::Mat R, rvec, tvec;
   // https://docs.opencv.org/4.x/d5/d1f/calib3d_solvePnP.html
-  cv::solvePnP(objectPoints, imagePoints, intrinsicCoeffs, cv::noArray(), rvec,
-               tvec);
+  cv::solvePnP(objectPoints, imagePoints, intrinsicCoeffs, cv::noArray(), rvec, tvec);
   cv::Rodrigues(rvec, R);  // from vector to matrix
   // cv:Mat fullTransMat
   // R.copyTo(fullTransMat.rowRange(0, 3).colRange(0, 3));
@@ -51,15 +54,15 @@ KDL::Frame calc_desired_pose(std::vector<cv::Point2f> imagePoints) {
   // transMatInv = fullTransMat.inv();
   // from
   // https://stackoverflow.com/questions/18637494/camera-position-in-world-coordinate-from-cvsolvepnp
-  R = R.t();         // rotation of inverse
-  tvec = -R * tvec;  // translation of inverse
+  // R = R.t();         // rotation of inverse
+  // tvec = -R * tvec;  // translation of inverse
 
   cv::Mat T = cv::Mat::eye(4, 4, R.type());     // T is 4x4
   T(cv::Range(0, 3), cv::Range(0, 3)) = R * 1;  // copies R into T
   T(cv::Range(0, 3), cv::Range(3, 4)) = tvec * 1;
-  // from X->right, Y->down, Z->forward to X->right, Y->forward, Z->up
-  T = T * Rot90X;  // rotate to match the robot's coordinate system
-
+  // from X->right, Y->down, Z->forward to X->up, Y->right, Z->forward
+  T = T * Rot90Z;  // rotate to match the robot's coordinate system
+  // TODO: Use nunchuck instead of wiimote for origin control (tvec)
   KDL::Vector translationVec =
       KDL::Vector(T.at<double>(0, 3), T.at<double>(1, 3), T.at<double>(2, 3));
   KDL::Rotation rotationMat =
@@ -166,7 +169,6 @@ class WiimoteHandler : public rclcpp::Node {
     // msg.buttons[msg.MSG_BTN_B] // B button bool
     // check that we got the max number of points (4) and that they are valid
     // before proceeding
-    KDL::Frame desired_pose;
     auto desired_joint_positions = KDL::JntArray(chain_.getNrOfJoints());
     if (imagePoints.size() != 4) {
       RCLCPP_WARN(this->get_logger(), "Lesser than 4 IR points: %zu",
@@ -175,7 +177,7 @@ class WiimoteHandler : public rclcpp::Node {
       // instead of just using the previous pose
       desired_joint_positions = current_joint_positions_;
     } else {
-      desired_pose = calc_desired_pose(imagePoints);
+      KDL::Frame desired_pose = calc_desired_pose(imagePoints);
       // inverse kinematics
       ik_solver_->CartToJnt(current_joint_positions_, desired_pose,
                             desired_joint_positions);

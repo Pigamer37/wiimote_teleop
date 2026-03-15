@@ -5,7 +5,9 @@ from launch.actions import (
     EmitEvent,
     RegisterEventHandler,
     LogInfo,
+    IncludeLaunchDescription,
 )
+from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import (
     Command,
     FindExecutable,
@@ -23,6 +25,7 @@ import lifecycle_msgs
 
 def generate_launch_description():
     wiimote_teleop_pck = FindPackageShare("wiimote_teleop")
+    sim = LaunchConfiguration("rviz")
 
     robot_description_content = Command(
         [
@@ -46,7 +49,9 @@ def generate_launch_description():
     robot_state_publisher = Node(
         package="robot_state_publisher",
         executable="robot_state_publisher",
-        parameters=[{"robot_description": robot_description_content}],
+        parameters=[
+            {"robot_description": robot_description_content, "use_sim_time": sim}
+        ],
     )
 
     controller_manager = Node(
@@ -92,7 +97,43 @@ def generate_launch_description():
                 ]
             ),
         ],
-        condition=IfCondition(LaunchConfiguration("rviz")),
+        condition=IfCondition(sim),
+    )
+
+    # Include the Gazebo launch file, provided by the ros_gz_sim package
+    gazebo = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            [
+                PathJoinSubstitution(
+                    [
+                        FindPackageShare("ros_gz_sim"),
+                        "launch",
+                        "gz_sim.launch.py",
+                    ]
+                )
+            ]
+        ),
+        launch_arguments={
+            "gz_args": ["-r -v4 empty.sdf"],
+            "on_exit_shutdown": "true",
+        }.items(),
+        condition=IfCondition(sim),
+    )
+
+    # Run the spawner node from the ros_gz_sim package. The entity name doesn't really matter if you only have a single robot.
+    spawn_entity = Node(
+        package="ros_gz_sim",
+        executable="create",
+        arguments=["-topic", "robot_description", "-name", "my_bot", "-z", "0.1"],
+        output="screen",
+        condition=IfCondition(sim),
+    )
+
+    gz_bridge = Node(
+        package="ros_gz_bridge",
+        executable="parameter_bridge",
+        arguments=["/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock"],
+        output="screen",
     )
 
     delay_rviz_after_joint_state_broadcaster_spawner = RegisterEventHandler(
@@ -197,6 +238,9 @@ def generate_launch_description():
             controller_manager,
             delayed_spawners,
             delay_rviz_after_joint_state_broadcaster_spawner,
+            gazebo,
+            spawn_entity,
+            gz_bridge,
             joy_node,  # lauch joy_node based on the launch argument
             RegisterEventHandler(  # handle controller when launched
                 OnProcessStart(
