@@ -12,7 +12,7 @@ from launch.substitutions import (
     LaunchConfiguration,
     PathJoinSubstitution,
 )
-from launch.conditions import IfCondition
+from launch.conditions import IfCondition, UnlessCondition
 from launch.event_handlers import OnProcessExit, OnProcessStart
 from launch_ros.actions import Node, LifecycleNode
 from launch_ros.substitutions import FindPackageShare
@@ -22,13 +22,15 @@ import lifecycle_msgs
 
 
 def generate_launch_description():
+    wiimote_teleop_pck = FindPackageShare("wiimote_teleop")
+
     robot_description_content = Command(
         [
             FindExecutable(name="xacro"),
             " ",
             PathJoinSubstitution(
                 [
-                    FindPackageShare("wiimote_teleop"),
+                    wiimote_teleop_pck,
                     "description",
                     "urdf",
                     "6dofexample.urdf.xacro",
@@ -38,7 +40,7 @@ def generate_launch_description():
     )
 
     controller_config = PathJoinSubstitution(
-        [FindPackageShare("wiimote_teleop"), "config", "controllers.yaml"]
+        [wiimote_teleop_pck, "config", "controllers.yaml"]
     )
 
     robot_state_publisher = Node(
@@ -84,7 +86,7 @@ def generate_launch_description():
             "-d",
             PathJoinSubstitution(
                 [
-                    FindPackageShare("wiimote_teleop"),
+                    wiimote_teleop_pck,
                     "description",
                     "6dof.rviz",
                 ]
@@ -112,6 +114,27 @@ def generate_launch_description():
         output="both",
     )
 
+    controller_handler = Node(
+        package="wiimote_teleop",
+        executable="controller_handler",
+        parameters=[
+            {
+                "robot_description": robot_description_content,
+                "end_link_name": LaunchConfiguration("end_link"),
+            }
+        ],
+        output="both",
+    )
+
+    joy_node = Node(
+        package="joy",
+        executable="joy_node",
+        parameters=[
+            PathJoinSubstitution([wiimote_teleop_pck, "config", "joystick.yaml"])
+        ],
+        condition=UnlessCondition(LaunchConfiguration("wiimote")),
+    )
+
     wiimote_node = LifecycleNode(
         package="wiimote",
         executable="wiimote_node",
@@ -119,9 +142,7 @@ def generate_launch_description():
         name="wiimote",
         output="screen",
         parameters=[
-            PathJoinSubstitution(
-                [FindPackageShare("wiimote_teleop"), "config", "wiimote.yaml"]
-            )
+            PathJoinSubstitution([wiimote_teleop_pck, "config", "wiimote.yaml"])
         ],
         condition=IfCondition(LaunchConfiguration("wiimote")),
     )
@@ -149,7 +170,6 @@ def generate_launch_description():
             ],
         )
     )
-
     on_activate_wiimote = RegisterEventHandler(
         OnStateTransition(
             target_lifecycle_node=wiimote_node,
@@ -177,6 +197,16 @@ def generate_launch_description():
             controller_manager,
             delayed_spawners,
             delay_rviz_after_joint_state_broadcaster_spawner,
+            joy_node,  # lauch joy_node based on the launch argument
+            RegisterEventHandler(  # handle controller when launched
+                OnProcessStart(
+                    target_action=joy_node,
+                    on_start=[
+                        LogInfo(msg="Joy node started, launching handler"),
+                        controller_handler,
+                    ],
+                )
+            ),
             wiimote_node,  # launch wiimote_node based on the launch argument
             RegisterEventHandler(  # configure wiimote when launched
                 OnProcessStart(

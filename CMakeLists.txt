@@ -31,6 +31,12 @@ target_compile_features(wiimote_handler PUBLIC c_std_99 cxx_std_17)  # Require C
 
 target_link_libraries(wiimote_handler ${OpenCV_LIBS})
 
+add_executable(controller_handler src/controller_handler.cpp)
+target_include_directories(controller_handler PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>)
+target_compile_features(controller_handler PUBLIC c_std_99 cxx_std_17)  # Require C99 and C++17
+
 ament_target_dependencies(wiimote_handler
   hardware_interface
   pluginlib
@@ -43,7 +49,18 @@ ament_target_dependencies(wiimote_handler
   kdl_parser
 )
 
-install(TARGETS wiimote_handler
+ament_target_dependencies(controller_handler
+  hardware_interface
+  pluginlib
+  rclcpp
+  rclcpp_lifecycle
+  joy
+  sensor_msgs
+  std_msgs
+  kdl_parser
+)
+
+install(TARGETS wiimote_handler controller_handler
   DESTINATION lib/${PROJECT_NAME})
 
 install(
