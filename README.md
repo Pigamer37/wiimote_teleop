@@ -15,6 +15,11 @@ or
 colcon build --symlink-install --packages-select wiimote-teleop
 ```
 to only compile the package (not all packages in your ROS workspace)
+Then source:
+```bash
+source install/setup.bash
+```
+Also build and source Delto_grippers
 4. [Take a look at the wiimote package's preliminary tests](https://github.com/ros-drivers/joystick_drivers/blob/ros2/wiimote/doc/testing.md)
 
 5. Run (with simulation):

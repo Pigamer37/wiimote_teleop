@@ -62,6 +62,13 @@ class ControllerHandler : public rclcpp::Node {
     this->get_parameter("end_link_name", end_link_param);
     auto end_link_name = end_link_param.as_string();
 
+    // get whether the gripper is controlled
+    auto gripper_param = rclcpp::Parameter();
+    this->declare_parameter("gripper",
+                            rclcpp::ParameterType::PARAMETER_BOOL);
+    this->get_parameter("gripper", gripper_param);
+    gripper = gripper_param.as_bool();
+
     // create kinematic chain
     kdl_parser::treeFromString(robot_description, robot_tree_);
     robot_tree_.getChain("base_link", end_link_name, chain_);
@@ -80,6 +87,13 @@ class ControllerHandler : public rclcpp::Node {
         "/joy", 10,
         std::bind(&ControllerHandler::topic_callback, this,
                   std::placeholders::_1));
+
+    if (gripper) {
+      grip_publisher_ = this->create_publisher<std_msgs::msg::Float64MultiArray>(
+        "/gripper_controller/commands", 10);
+    } else {
+      grip_publisher_ = nullptr;
+    }
     // set LED 1 to on as feedback that the node is configured and ready to receive messages
     for (size_t i = 0; i < feedback_msg.array.size(); i++) {
       feedback_msg.array[i].type = feedback_msg.array[i].TYPE_LED;
@@ -124,6 +138,20 @@ class ControllerHandler : public rclcpp::Node {
 
     publisher_->publish(articular_pose_msg);
     // TODO: handle tool (button 7 is right trigger)
+    if (gripper) {
+      std_msgs::msg::Float64MultiArray gripper_pose_msg;
+      if (msg.buttons[7]==1) {  // close
+        gripper_pose_msg.data = std::vector<double>{0.0,0.0,M_PI/2,M_PI/2,
+                                                    0.0,0.0,M_PI/2,M_PI/2,
+                                                    0.0,0.0,M_PI/2,M_PI/2};
+        grip_publisher_->publish(gripper_pose_msg);
+      } else if (msg.buttons[5]==1) { // open
+        gripper_pose_msg.data = std::vector<double>{0.0,0.0,0.0,0.0,
+                                                    0.0,0.0,0.0,0.0,
+                                                    0.0,0.0,0.0,0.0};
+        grip_publisher_->publish(gripper_pose_msg);
+      }
+    }
   }
   KDL::Frame get_desired_pose(const sensor_msgs::msg::Joy& msg) const{
     KDL::Frame curr_cartesian_pose;
@@ -146,9 +174,9 @@ class ControllerHandler : public rclcpp::Node {
     float y_rot = msg.axes[3] * rot_multiplier;
     float x_rot = msg.axes[2] * rot_multiplier;
     float z_rot = 0;
-    if (msg.buttons[1]==1 && msg.buttons[2]==0) { // Left shoulder button
+    if (msg.buttons[1]==0 && msg.buttons[2]==1) {
       z_rot = 0.75 * rot_multiplier; // roll counter-clockwise (from robot)
-    } else if (msg.buttons[1]==0 && msg.buttons[2]==1) { // Right shoulder
+    } else if (msg.buttons[1]==1 && msg.buttons[2]==0) {
       z_rot = -0.75 * rot_multiplier; // roll clockwise (from robot)
     }
     KDL::Rotation rotation = curr_cartesian_pose.M;
@@ -162,6 +190,8 @@ class ControllerHandler : public rclcpp::Node {
   rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr subscription_;
   rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr joint_sub_;
   rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr publisher_;
+  rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr grip_publisher_;
+  bool gripper;
   rclcpp::Publisher<sensor_msgs::msg::JoyFeedbackArray>::SharedPtr op_feedback_pub_;
   KDL::Tree robot_tree_;
   KDL::Chain chain_;

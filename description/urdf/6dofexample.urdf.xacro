@@ -1,6 +1,8 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://wiki.ros.org/xacro" name="r6bot">
-
+  <xacro:arg name="sim" default="true" />
+  <xacro:arg name="gripper" default="true" />
+  <xacro:arg name="end_link" default="tool0" />
   <!-- Import r6bot macro -->
   <xacro:include filename="$(find wiimote_teleop)/description/urdf/r6bot_description.urdf.xacro"/>
 
@@ -13,9 +15,9 @@
 
   <!-- Import r6bot ros2_control description -->
   <xacro:include filename="$(find wiimote_teleop)/description/urdf/ros2_control.xacro" />
-  <xacro:r6bot_ros2_control name="r6bot" sim="true" gripper="true"/>
+  <xacro:r6bot_ros2_control name="r6bot" sim="$(arg sim)" gripper="$(arg gripper)"/>
 
   <xacro:include filename="$(find wiimote_teleop)/description/urdf/gripper.attach.urdf.xacro"/>
-  <xacro:gripper_attach base="tool0"/>
+  <xacro:gripper_attach base="$(arg end_link)"/>
 
 </robot>

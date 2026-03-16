@@ -26,6 +26,7 @@ import lifecycle_msgs
 def generate_launch_description():
     wiimote_teleop_pck = FindPackageShare("wiimote_teleop")
     sim = LaunchConfiguration("rviz")
+    grip = LaunchConfiguration("gripper")
 
     robot_description_content = Command(
         [
@@ -39,6 +40,12 @@ def generate_launch_description():
                     "6dofexample.urdf.xacro",
                 ]
             ),
+            " sim:=",
+            sim,
+            " gripper:=",
+            grip,
+            " end_link:=",
+            LaunchConfiguration("end_link"),
         ]
     )
 
@@ -106,7 +113,7 @@ def generate_launch_description():
                 [
                     wiimote_teleop_pck,
                     "description",
-                    "6dof.rviz",
+                    "6dofWithGripper.rviz",
                 ]
             ),
         ],
@@ -178,6 +185,7 @@ def generate_launch_description():
             {
                 "robot_description": robot_description_content,
                 "end_link_name": LaunchConfiguration("end_link"),
+                "gripper": grip,
             }
         ],
         output="both",
@@ -190,6 +198,7 @@ def generate_launch_description():
             {
                 "robot_description": robot_description_content,
                 "end_link_name": LaunchConfiguration("end_link"),
+                "gripper": grip,
             }
         ],
         output="both",
@@ -258,6 +267,9 @@ def generate_launch_description():
             DeclareLaunchArgument("end_link", default_value="tool0"),
             DeclareLaunchArgument(
                 "rviz", default_value="true", choices=["true", "false"]
+            ),
+            DeclareLaunchArgument(
+                "gripper", default_value="true", choices=["true", "false"]
             ),
             DeclareLaunchArgument(
                 "wiimote", default_value="true", choices=["true", "false"]
