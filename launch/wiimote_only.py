@@ -35,6 +35,7 @@ def generate_launch_description():
             FindPackageShare("wiimote_teleop").find("wiimote_teleop")
             + "/config/wiimote.yaml"
         ],
+        remappings=[("/imu/data", "/imu/data_raw")],
     )
 
     configure_wiimote = launch.actions.EmitEvent(

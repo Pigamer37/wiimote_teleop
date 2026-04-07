@@ -6,4 +6,4 @@ wiimote:
     publish_interval: .2
     require_nunchuk: false
     require_classic: false
-    require_motionplus: false
+    require_motionplus: true
