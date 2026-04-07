@@ -69,6 +69,13 @@ class ControllerHandler : public rclcpp::Node {
     this->get_parameter("gripper", gripper_param);
     gripper = gripper_param.as_bool();
 
+    // get whether we are using wiimote classic controller
+    auto classic_param = rclcpp::Parameter();
+    this->declare_parameter("classic",
+                            rclcpp::ParameterType::PARAMETER_BOOL);
+    this->get_parameter("classic", classic_param);
+    classic = classic_param.as_bool();
+
     // create kinematic chain
     kdl_parser::treeFromString(robot_description, robot_tree_);
     robot_tree_.getChain("base_link", end_link_name, chain_);
@@ -137,15 +144,15 @@ class ControllerHandler : public rclcpp::Node {
                     sizeof(double));  // flat64 is equivalent to double
 
     publisher_->publish(articular_pose_msg);
-    // TODO: handle tool (button 7 is right trigger)
+    // handle tool (button 7 is right trigger)
     if (gripper) {
       std_msgs::msg::Float64MultiArray gripper_pose_msg;
-      if (msg.buttons[7]==1) {  // close
+      if ((msg.buttons[7]==1 && !classic) || (msg.buttons[9]==1 && classic)) {  // close
         gripper_pose_msg.data = std::vector<double>{0.0,0.0,M_PI/2,M_PI/2,
                                                     0.0,0.0,M_PI/2,M_PI/2,
                                                     0.0,0.0,M_PI/2,M_PI/2};
         grip_publisher_->publish(gripper_pose_msg);
-      } else if (msg.buttons[5]==1) { // open
+      } else if ((msg.buttons[5]==1 && !classic) || (msg.buttons[10]==1 && classic)) { // open
         gripper_pose_msg.data = std::vector<double>{0.0,0.0,0.0,0.0,
                                                     0.0,0.0,0.0,0.0,
                                                     0.0,0.0,0.0,0.0};
@@ -158,27 +165,68 @@ class ControllerHandler : public rclcpp::Node {
     fk_solver_->JntToCart(current_joint_positions_, curr_cartesian_pose);
     // deal with origin
     float axis_multiplier = 0.2, rot_multiplier = 0.5;
-    float x_inc = msg.axes[0] * axis_multiplier;
-    float y_inc = msg.axes[1] * axis_multiplier;
-    float z_inc = 0;
-    if (msg.buttons[4]==1 && msg.buttons[6]==0) { // Left shoulder button
-      z_inc = 0.75 * axis_multiplier; // go up
-    } else if (msg.buttons[4]==0 && msg.buttons[6]==1) { // Right shoulder
-      z_inc = -0.75 * axis_multiplier; // go down
+    float x_inc = 0, y_inc = 0, z_inc = 0, x_rot = 0, y_rot = 0, z_rot = 0;
+    if(!classic) {
+      x_inc = msg.axes[0] * axis_multiplier;
+      y_inc = msg.axes[1] * axis_multiplier;
+      if (msg.buttons[4]==1 && msg.buttons[6]==0) { // Left shoulder button
+        z_inc = 0.75 * axis_multiplier; // go up
+      } else if (msg.buttons[4]==0 && msg.buttons[6]==1) { // Right shoulder
+        z_inc = -0.75 * axis_multiplier; // go down
+      }
+
+      // deal with orientation
+      y_rot = msg.axes[3] * rot_multiplier;
+      x_rot = msg.axes[2] * rot_multiplier;
+      if (msg.buttons[1]==0 && msg.buttons[2]==1) {
+        z_rot = 0.75 * rot_multiplier; // roll counter-clockwise (from robot)
+      } else if (msg.buttons[1]==1 && msg.buttons[2]==0) {
+        z_rot = -0.75 * rot_multiplier; // roll clockwise (from robot)
+      }
+    } else {
+      if (msg.buttons[12]==1 && msg.buttons[13]==0) { // Left on D-pad
+        x_inc = -0.75 * axis_multiplier; // go left
+      } else if (msg.buttons[12]==0 && msg.buttons[13]==1) { // Right on D-pad
+        x_inc = 0.75 * axis_multiplier; // go right
+      }
+
+      if (msg.buttons[11]==1 && msg.buttons[14]==0) { // Up on D-pad
+        y_inc = 0.75 * axis_multiplier; // go forwards
+      } else if (msg.buttons[11]==0 && msg.buttons[14]==1) { // Down on D-pad
+        y_inc = -0.75 * axis_multiplier; // go backwards
+      }
+
+      if (msg.buttons[4]==1 && msg.buttons[5]==0) { // Left shoulder button
+        z_inc = 0.75 * axis_multiplier; // go up
+      } else if (msg.buttons[4]==0 && msg.buttons[5]==1) { // Right shoulder
+        z_inc = -0.75 * axis_multiplier; // go down
+      }
+
+      // deal with orientation
+      if (msg.buttons[1]==1 && msg.buttons[2]==0) { // B button
+        x_rot = 0.75 * rot_multiplier;
+      } else if (msg.buttons[1]==0 && msg.buttons[2]==1) { // X button
+        x_rot = -0.75 * rot_multiplier;
+      }
+
+      if (msg.buttons[3]==1 && msg.buttons[0]==0) { // Y button
+        y_rot = 0.75 * rot_multiplier;
+      } else if (msg.buttons[3]==0 && msg.buttons[0]==1) { // A button
+        y_rot = -0.75 * rot_multiplier;
+      }
+
+      if (msg.buttons[6]==0 && msg.buttons[7]==1) {
+        z_rot = 0.75 * rot_multiplier; // roll counter-clockwise (from robot)
+      } else if (msg.buttons[6]==1 && msg.buttons[7]==0) {
+        z_rot = -0.75 * rot_multiplier; // roll clockwise (from robot)
+      }
     }
+
     KDL::Vector origin = curr_cartesian_pose.p;
     origin.x(origin.x() + x_inc);
     origin.y(origin.y() + y_inc);
     origin.z(origin.z() + z_inc);
-    // deal with orientation
-    float y_rot = msg.axes[3] * rot_multiplier;
-    float x_rot = msg.axes[2] * rot_multiplier;
-    float z_rot = 0;
-    if (msg.buttons[1]==0 && msg.buttons[2]==1) {
-      z_rot = 0.75 * rot_multiplier; // roll counter-clockwise (from robot)
-    } else if (msg.buttons[1]==1 && msg.buttons[2]==0) {
-      z_rot = -0.75 * rot_multiplier; // roll clockwise (from robot)
-    }
+    
     KDL::Rotation rotation = curr_cartesian_pose.M;
     rotation.DoRotY(y_rot);
     rotation.DoRotX(x_rot);
@@ -192,6 +240,7 @@ class ControllerHandler : public rclcpp::Node {
   rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr publisher_;
   rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr grip_publisher_;
   bool gripper;
+  bool classic;
   rclcpp::Publisher<sensor_msgs::msg::JoyFeedbackArray>::SharedPtr op_feedback_pub_;
   KDL::Tree robot_tree_;
   KDL::Chain chain_;

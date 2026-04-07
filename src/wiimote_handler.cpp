@@ -15,6 +15,7 @@
 #define _USE_MATH_DEFINES
 #include <cmath>
 #include <kdl/chainiksolverpos_lma.hpp>
+#include <kdl/chainfksolverpos_recursive.hpp>
 #include <kdl/jntarray.hpp>
 #include <kdl/tree.hpp>
 #include <kdl_parser/kdl_parser.hpp>
@@ -107,13 +108,21 @@ class WiimoteHandler : public rclcpp::Node {
     this->get_parameter("end_link_name", end_link_param);
     auto end_link_name = end_link_param.as_string();
 
+    // get whether the gripper is controlled
+    auto gripper_param = rclcpp::Parameter();
+    this->declare_parameter("gripper",
+                            rclcpp::ParameterType::PARAMETER_BOOL);
+    this->get_parameter("gripper", gripper_param);
+    gripper = gripper_param.as_bool();
+
     // create kinematic chain
     kdl_parser::treeFromString(robot_description, robot_tree_);
     robot_tree_.getChain("base_link", end_link_name, chain_);
     // create KDL solvers
     ik_solver_ = std::make_shared<KDL::ChainIkSolverPos_LMA>(chain_);
+    fk_solver_ = std::make_shared<KDL::ChainFkSolverPos_recursive>(chain_);
     current_joint_positions_ = KDL::JntArray(chain_.getNrOfJoints());
-
+    RCLCPP_INFO(this->get_logger(),"Declared KDL solvers!");
     joint_sub_ = this->create_subscription<sensor_msgs::msg::JointState>(
         "/joint_states", 10,
         std::bind(&WiimoteHandler::update_joint_state, this,
@@ -124,6 +133,13 @@ class WiimoteHandler : public rclcpp::Node {
         "/wiimote/state", 10,
         std::bind(&WiimoteHandler::topic_callback, this,
                   std::placeholders::_1));
+
+    if (gripper) {
+      grip_publisher_ = this->create_publisher<std_msgs::msg::Float64MultiArray>(
+        "/gripper_controller/commands", 10);
+    } else {
+      grip_publisher_ = nullptr;
+    }
     // set LED 1 to on as feedback that the node is configured and ready to receive messages
     for (size_t i = 0; i < feedback_msg.array.size(); i++) {
       feedback_msg.array[i].type = feedback_msg.array[i].TYPE_LED;
@@ -134,6 +150,7 @@ class WiimoteHandler : public rclcpp::Node {
     feedback_msg.array[3].id = 0;  // LED 1
     feedback_msg.array[3].intensity = 1.0;  // on
     op_feedback_pub_->publish(feedback_msg);
+    RCLCPP_INFO(this->get_logger(),"Finished setting up wiimote_handler");
   }
 
  private:
@@ -152,33 +169,38 @@ class WiimoteHandler : public rclcpp::Node {
   }
   void topic_callback(const wiimote_msgs::msg::State& msg) const {
     // RCLCPP_INFO(this->get_logger(), "I heard: '%s'", msg.data.c_str());
-    std::vector<cv::Point2f> imagePoints;
-    for (auto irCoords : msg.ir_tracking) {
-      if (irCoords.x == msg.INVALID_FLOAT)
-        break;  // invalid point, stop processing further points
-      else {
-        RCLCPP_INFO(this->get_logger(), "IR point: x=%f, y=%f", irCoords.x,
-                    irCoords.y);
-        // emplace points so (0,0) is top left and (IMG_WIDTH, IMG_HEIGHT) is
-        // bottom right
-        imagePoints.emplace_back(IMG_WIDTH - 1 - irCoords.x,
-                                 IMG_HEIGHT - 1 - irCoords.y);
-      }
-    }
-    // msg.buttons[msg.MSG_BTN_A] // A button bool
-    // msg.buttons[msg.MSG_BTN_B] // B button bool
-    // check that we got the max number of points (4) and that they are valid
-    // before proceeding
+    KDL::Frame desired_pose = get_desired_pose(msg);
     auto desired_joint_positions = KDL::JntArray(chain_.getNrOfJoints());
-    if (imagePoints.size() != 4) {
-      RCLCPP_WARN(this->get_logger(), "Lesser than 4 IR points: %zu",
-                  imagePoints.size());
-      // TODO: Calculate the new pose based on previous and accelerometer data
-      // instead of just using the previous pose
-      desired_joint_positions = current_joint_positions_;
-    } else {
-      KDL::Frame desired_pose = calc_desired_pose(imagePoints);
-      // inverse kinematics
+    if(false) { //TODO: support IR tracking
+      std::vector<cv::Point2f> imagePoints;
+      for (auto irCoords : msg.ir_tracking) {
+        if (irCoords.x == msg.INVALID_FLOAT)
+          break;  // invalid point, stop processing further points
+        else {
+          RCLCPP_INFO(this->get_logger(), "IR point: x=%f, y=%f", irCoords.x,
+                      irCoords.y);
+          // emplace points so (0,0) is top left and (IMG_WIDTH, IMG_HEIGHT) is
+          // bottom right
+          imagePoints.emplace_back(IMG_WIDTH - 1 - irCoords.x,
+                                  IMG_HEIGHT - 1 - irCoords.y);
+        }
+      }
+      // check that we got the max number of points (4) and that they are valid
+      // before proceeding
+      if (imagePoints.size() != 4) {
+        RCLCPP_WARN(this->get_logger(), "Lesser than 4 IR points: %zu",
+                    imagePoints.size());
+        // TODO: Calculate the new pose based on previous and accelerometer data
+        // instead of just using the previous pose
+        desired_joint_positions = current_joint_positions_;
+      } else {
+        KDL::Frame desired_pose = calc_desired_pose(imagePoints);
+        // inverse kinematics
+        ik_solver_->CartToJnt(current_joint_positions_, desired_pose,
+                              desired_joint_positions);
+      }
+    } else { // use orientation from imu
+      // TODO: apply rotation to desired_pose based on IMU orientation
       ik_solver_->CartToJnt(current_joint_positions_, desired_pose,
                             desired_joint_positions);
     }
@@ -192,15 +214,70 @@ class WiimoteHandler : public rclcpp::Node {
                     sizeof(double));  // flat64 is equivalent to double
 
     publisher_->publish(articular_pose_msg);
+
+    // msg.buttons[msg.MSG_BTN_A] // A button bool
+    // msg.buttons[msg.MSG_BTN_B] // B button bool
+    if (gripper) {
+      std_msgs::msg::Float64MultiArray gripper_pose_msg;
+      if (msg.buttons[msg.MSG_BTN_A]==1 || msg.buttons[msg.MSG_CLASSIC_BTN_A]==1) {  // close
+        gripper_pose_msg.data = std::vector<double>{0.0,0.0,M_PI/2,M_PI/2,
+                                                    0.0,0.0,M_PI/2,M_PI/2,
+                                                    0.0,0.0,M_PI/2,M_PI/2};
+        grip_publisher_->publish(gripper_pose_msg);
+      } else if (msg.buttons[msg.MSG_BTN_B]==1 || msg.buttons[msg.MSG_CLASSIC_BTN_B]==1) { // open
+        gripper_pose_msg.data = std::vector<double>{0.0,0.0,0.0,0.0,
+                                                    0.0,0.0,0.0,0.0,
+                                                    0.0,0.0,0.0,0.0};
+        grip_publisher_->publish(gripper_pose_msg);
+      }
+    }
   }
+  KDL::Frame get_desired_pose(const wiimote_msgs::msg::State& msg) const{
+    KDL::Frame curr_cartesian_pose;
+    fk_solver_->JntToCart(current_joint_positions_, curr_cartesian_pose);
+    // deal with origin
+    float axis_multiplier = 0.2, rot_multiplier = 0.5;
+    float x_inc = msg.nunchuk_joystick_zeroed[0] * axis_multiplier;
+    float y_inc = msg.nunchuk_joystick_zeroed[1] * axis_multiplier;
+    float z_inc = 0;
+    if ((msg.buttons[msg.MSG_BTN_C]==1 || msg.buttons[msg.MSG_CLASSIC_BTN_L]==1) && msg.buttons[msg.MSG_BTN_Z]==0 && msg.buttons[msg.MSG_CLASSIC_BTN_R]==0) { // Left shoulder button
+      z_inc = 0.75 * axis_multiplier; // go up
+    } else if (msg.buttons[msg.MSG_BTN_C]==0 && msg.buttons[msg.MSG_CLASSIC_BTN_L]==0 && (msg.buttons[msg.MSG_BTN_Z]==1 || msg.buttons[msg.MSG_CLASSIC_BTN_R]==1)) { // Right shoulder
+      z_inc = -0.75 * axis_multiplier; // go down
+    }
+    KDL::Vector origin = curr_cartesian_pose.p;
+    origin.x(origin.x() + x_inc);
+    origin.y(origin.y() + y_inc);
+    origin.z(origin.z() + z_inc);
+    // deal with orientation
+    // float y_rot = msg.axes[3] * rot_multiplier;
+    // float x_rot = msg.axes[2] * rot_multiplier;
+    // float z_rot = 0;
+    // if (msg.buttons[1]==0 && msg.buttons[2]==1) {
+    //   z_rot = 0.75 * rot_multiplier; // roll counter-clockwise (from robot)
+    // } else if (msg.buttons[1]==1 && msg.buttons[2]==0) {
+    //   z_rot = -0.75 * rot_multiplier; // roll clockwise (from robot)
+    // }
+    KDL::Rotation rotation = curr_cartesian_pose.M;
+    // rotation.DoRotY(y_rot);
+    // rotation.DoRotX(x_rot);
+    // rotation.DoRotZ(z_rot);
+
+    return KDL::Frame(rotation, origin);
+  }
+
   rclcpp::Subscription<wiimote_msgs::msg::State>::SharedPtr subscription_;
   rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr joint_sub_;
   rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr publisher_;
+  rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr grip_publisher_;
+  bool gripper;
   rclcpp::Publisher<sensor_msgs::msg::JoyFeedbackArray>::SharedPtr op_feedback_pub_;
   KDL::Tree robot_tree_;
   KDL::Chain chain_;
   std::shared_ptr<KDL::ChainIkSolverPos_LMA> ik_solver_;
+  std::shared_ptr<KDL::ChainFkSolverPos_recursive> fk_solver_;
   KDL::JntArray current_joint_positions_;
+  KDL::Frame desired_pose_;
 };
 
 int main(int argc, char** argv) {

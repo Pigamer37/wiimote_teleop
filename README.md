@@ -12,7 +12,7 @@ colcon build --symlink-install
 ```
 or
 ```bash
-colcon build --symlink-install --packages-select wiimote-teleop
+colcon build --symlink-install --packages-select wiimote_teleop
 ```
 to only compile the package (not all packages in your ROS workspace)
 Then source:
@@ -26,9 +26,18 @@ Also build and source Delto_grippers
 ```bash
 ros2 launch wiimote_teleop full.launch.py
 ```
+Run with Wiimote with classic controller (must be connected prior)
+```bash
+ros2 launch wiimote_teleop full.launch.py wiimote:=false classic_wiimote:=true
+```
+Run with generic controller (must be connected prior)
+```bash
+ros2 launch wiimote_teleop full.launch.py wiimote:=false
+```
 Launch parameters:
 - end_link: the string name of the last link (usually "tool0" by convention, the default value)
 - rviz: launch rviz to visualize the robot (eiter true or false)
 - wiimote: use the wiimote_handler or a generic 2 axis controller (joystick) handler to command the robot (eiter true or false)
+- classic_wiimote: to get the same functionallity as with a generic 2 joystick controller, but using the classic controller attachment on a wiimote (wiimote param must be set to false). Axes don't work so all actions are mapped to buttons
 # Acknowledgements
 This package uses the description from the 6DOF robot from ros2_control's example 7

@@ -199,6 +199,7 @@ def generate_launch_description():
                 "robot_description": robot_description_content,
                 "end_link_name": LaunchConfiguration("end_link"),
                 "gripper": grip,
+                "classic": LaunchConfiguration("classic_wiimote"),
             }
         ],
         output="both",
@@ -210,7 +211,20 @@ def generate_launch_description():
         parameters=[
             PathJoinSubstitution([wiimote_teleop_pck, "config", "joystick.yaml"])
         ],
-        condition=UnlessCondition(LaunchConfiguration("wiimote")),
+        condition=UnlessCondition(
+            LaunchConfiguration("wiimote") and LaunchConfiguration("classic_wiimote")
+        ),
+    )
+
+    classic_joy_node = Node(
+        package="joy",
+        executable="joy_node",
+        parameters=[
+            PathJoinSubstitution(
+                [wiimote_teleop_pck, "config", "wiimote_joystick.yaml"]
+            )
+        ],
+        condition=IfCondition(LaunchConfiguration("classic_wiimote")),
     )
 
     wiimote_node = LifecycleNode(
@@ -274,6 +288,9 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "wiimote", default_value="true", choices=["true", "false"]
             ),
+            DeclareLaunchArgument(
+                "classic_wiimote", default_value="false", choices=["true", "false"]
+            ),
             robot_state_publisher,
             controller_manager,
             delayed_spawners,
@@ -283,11 +300,21 @@ def generate_launch_description():
             # gripper,
             gz_bridge,
             joy_node,  # lauch joy_node based on the launch argument
+            classic_joy_node,  # launch classic_joy_node based on the launch argument
             RegisterEventHandler(  # handle controller when launched
                 OnProcessStart(
                     target_action=joy_node,
                     on_start=[
                         LogInfo(msg="Joy node started, launching handler"),
+                        controller_handler,
+                    ],
+                )
+            ),
+            RegisterEventHandler(  # handle controller when launched
+                OnProcessStart(
+                    target_action=classic_joy_node,
+                    on_start=[
+                        LogInfo(msg="Classic Joy node started, launching handler"),
                         controller_handler,
                     ],
                 )
